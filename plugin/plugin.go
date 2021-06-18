@@ -191,3 +191,60 @@ func (p *Plugin) claimTables() {
 		table.Plugin = p
 	}
 }
+
+// Execute0 executes a query and stream the results
+func (p *Plugin) Execute0(ctx context.Context, req *proto.ExecuteRequest, stream proto.WrapperPlugin_ExecuteServer) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(error); ok {
+				err = e
+			} else {
+				err = fmt.Errorf("%v", r)
+			}
+		}
+	}()
+
+	logging.LogTime("Start execute")
+	p.Logger.Debug("Execute ", "connection", req.Connection, "connection config", p.Connections, "table", req.Table)
+
+	queryContext := req.QueryContext
+	table, ok := p.TableMap[req.Table]
+	if !ok {
+		return fmt.Errorf("plugin %s does not provide table %s", p.Name, req.Table)
+	}
+
+	p.Logger.Debug("Got query context",
+		"table", req.Table,
+		"cols", queryContext.Columns)
+
+	// async approach
+	// 1) call list() in a goroutine. This writes pages of items to the rowDataChan. When complete it closes the channel
+	// 2) range over rowDataChan - for each item spawn a goroutine to build a row
+	// 3) Build row spawns goroutines for any required hydrate functions.
+	// 4) When hydrate functions are complete, apply transforms to generate column values. When row is ready, send on rowChan
+	// 5) Range over rowChan - for each row, send on results stream
+	ctx = context.WithValue(ctx, context_key.Logger, p.Logger)
+
+	var matrixItem []map[string]interface{}
+
+	// get the matrix item
+	if table.GetMatrixItem != nil {
+		matrixItem = table.GetMatrixItem(ctx, nil)
+	}
+
+	queryData := newQueryData(queryContext, table, stream, nil, matrixItem, p.ConnectionManager)
+	p.Logger.Debug("calling fetchItems", "table", table.Name, "matrixItem", matrixItem)
+
+	// asyncronously fetch items
+	if err := table.fetchItems(ctx, queryData); err != nil {
+		p.Logger.Warn("fetchItems returned an error", "table", table.Name, "error", err)
+		return err
+	}
+	logging.LogTime("Calling build Rows")
+
+	// asyncronously build rows
+	rowChan := queryData.buildRows(ctx)
+	logging.LogTime("Calling build Stream")
+	// asyncronously stream rows
+	return queryData.streamRows(ctx, rowChan)
+}
