@@ -16,8 +16,8 @@ github.com/armon/go-radix v0.0.0-20180808171621-7fddfc383310/go.mod h1:ufUuZ+zHj
 github.com/aws/aws-sdk-go v1.25.37/go.mod h1:KmX6BPdI08NWTb3/sm4ZGu5ShLoqVDhKgpiN924inxo=
 github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973/go.mod h1:Dwedo/Wpr24TaqPxmxbtue+5NUziq4I4S80YR8gNf3Q=
 github.com/bgentry/speakeasy v0.1.0/go.mod h1:+zsyZBPWlz7T6j88CTgSN5bM796AkVf0kBD4zp0CCIs=
-github.com/blinkops/blink-sdk v1.0.34 h1:ap7300PyRz+qdg7ZfToKmyONgHwc1etNuT/V5msg+PY=
-github.com/blinkops/blink-sdk v1.0.34/go.mod h1:Oyv/I/9CBcHpSo4BvkKvzdXnDYp8fa1U8HFK20f3sNQ=
+github.com/blinkops/blink-sdk v1.0.37 h1:aktQQAImlGZo6WwVVvE9cUSc3mt4b8XOkGpfn3WV6tc=
+github.com/blinkops/blink-sdk v1.0.37/go.mod h1:Oyv/I/9CBcHpSo4BvkKvzdXnDYp8fa1U8HFK20f3sNQ=
 github.com/btubbs/datetime v0.1.1 h1:KuV+F9tyq/hEnezmKZNGk8dzqMVsId6EpFVrQCfA3To=
 github.com/btubbs/datetime v0.1.1/go.mod h1:n2BZ/2ltnRzNiz27aE3wUb2onNttQdC+WFxAoks5jJM=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
