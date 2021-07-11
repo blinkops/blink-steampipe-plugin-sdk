@@ -133,7 +133,7 @@ func (p *Plugin) Execute(req *proto.ExecuteRequest, stream proto.WrapperPlugin_E
 
 	// get the matrix item
 	if table.GetMatrixItem != nil {
-		matrixItem = table.GetMatrixItem(ctx, connection)
+		matrixItem = table.GetMatrixItem(ctx, connection, req.QueryContext)
 	}
 
 	queryData := newQueryData(queryContext, table, stream, connection, matrixItem, p.ConnectionManager)
@@ -229,7 +229,7 @@ func (p *Plugin) Execute0(ctx context.Context, req *proto.ExecuteRequest, stream
 
 	// get the matrix item
 	if table.GetMatrixItem != nil {
-		matrixItem = table.GetMatrixItem(ctx, nil)
+		matrixItem = table.GetMatrixItem(ctx, nil, req.QueryContext)
 	}
 
 	queryData := newQueryData(queryContext, table, stream, nil, matrixItem, p.ConnectionManager)

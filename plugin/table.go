@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"github.com/turbot/steampipe-plugin-sdk/grpc/proto"
 	"log"
 
 	"github.com/turbot/steampipe-plugin-sdk/plugin/transform"
@@ -9,7 +10,7 @@ import (
 	"github.com/turbot/go-kit/helpers"
 )
 
-type MatrixItemFunc func(context.Context, *Connection) []map[string]interface{}
+type MatrixItemFunc func(context.Context, *Connection, *proto.QueryContext) []map[string]interface{}
 type ErrorPredicate func(error) bool
 
 // Table represents a plugin table
