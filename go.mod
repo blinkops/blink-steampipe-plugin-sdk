@@ -3,7 +3,7 @@ module github.com/turbot/steampipe-plugin-sdk
 go 1.16
 
 require (
-	github.com/blinkops/blink-sdk v1.0.37
+	github.com/blinkops/blink-sdk v1.0.47
 	github.com/dgraph-io/ristretto v0.0.3
 	github.com/ghodss/yaml v1.0.0
 	github.com/golang/protobuf v1.5.2
@@ -23,6 +23,6 @@ require (
 	golang.org/x/text v0.3.4 // indirect
 	google.golang.org/genproto v0.0.0-20201029200359-8ce4113da6f7 // indirect
 	google.golang.org/grpc v1.37.0
-	google.golang.org/protobuf v1.26.0
+	google.golang.org/protobuf v1.27.1
 	gopkg.in/yaml.v2 v2.2.8 // indirect
 )

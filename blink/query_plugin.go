@@ -10,6 +10,7 @@ import (
 	"github.com/turbot/steampipe-plugin-sdk/grpc/proto"
 	steamPlugin "github.com/turbot/steampipe-plugin-sdk/plugin"
 	"google.golang.org/grpc/metadata"
+	"time"
 )
 
 const ActionContextKey = "actionContext"
@@ -156,6 +157,7 @@ func (q *QueryPlugin) ExecuteAction(actionContext *blinkPlugin.ActionContext, re
 	stream := &ResultStream{}
 	executeRequest := &proto.ExecuteRequest{Table: tableName, QueryContext: queryContext}
 	ctx := context.WithValue(context.TODO(), ActionContextKey, actionContext)
+	ctx = context.WithValue(ctx, "timeout", time.Duration(request.Timeout) * time.Second)
 	err = q.SteamPipePlugin.Execute0(ctx, executeRequest, stream)
 	if err != nil {
 		return nil, err
