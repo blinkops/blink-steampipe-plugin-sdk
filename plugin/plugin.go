@@ -207,7 +207,7 @@ func (p *Plugin) Execute0(ctx context.Context, req *proto.ExecuteRequest, stream
 	logging.LogTime("Start execute")
 	p.Logger.Debug("Execute ", "connection", req.Connection, "connection config", p.Connections, "table", req.Table)
 
-	queryContext := req.QueryContext
+	queryContext := NewQueryContext(req.QueryContext)
 	table, ok := p.TableMap[req.Table]
 	if !ok {
 		return fmt.Errorf("plugin %s does not provide table %s", p.Name, req.Table)

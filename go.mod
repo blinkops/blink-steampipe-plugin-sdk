@@ -3,8 +3,9 @@ module github.com/turbot/steampipe-plugin-sdk
 go 1.16
 
 require (
-	github.com/blinkops/blink-sdk v1.0.47
+	github.com/blinkops/blink-sdk v1.0.49
 	github.com/dgraph-io/ristretto v0.0.3
+	github.com/gertd/go-pluralize v0.1.7
 	github.com/ghodss/yaml v1.0.0
 	github.com/golang/protobuf v1.5.2
 	github.com/hashicorp/go-hclog v0.15.0
@@ -16,6 +17,6 @@ require (
 	github.com/stevenle/topsort v0.0.0-20130922064739-8130c1d7596b
 	github.com/turbot/go-kit v0.2.2-0.20210628165333-268ba0a30be3
 	github.com/zclconf/go-cty v1.8.2
-	google.golang.org/grpc v1.33.1
-	google.golang.org/protobuf v1.25.0
+	google.golang.org/grpc v1.37.0
+	google.golang.org/protobuf v1.27.1
 )
