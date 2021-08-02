@@ -8,26 +8,32 @@ import (
 	"time"
 
 	"github.com/turbot/go-kit/helpers"
+	typehelpers "github.com/turbot/go-kit/types"
 	connection_manager "github.com/turbot/steampipe-plugin-sdk/connection"
+	"github.com/turbot/steampipe-plugin-sdk/grpc"
 	"github.com/turbot/steampipe-plugin-sdk/grpc/proto"
 	"github.com/turbot/steampipe-plugin-sdk/logging"
+	"github.com/turbot/steampipe-plugin-sdk/plugin/quals"
 )
 
 const itemBufferSize = 100
 
+// NOTE - any field added here must also be added to ShallowCopy
+
 type QueryData struct {
 	// The table this query is associated with
 	Table *Table
-	// if this is a get call (or a list call if list key columns are specified)
-	// this will be populated with the quals as a map of column name to quals
-	KeyColumnQuals map[string]*proto.QualValue
-	// any optional list quals which were passed
-	OptionalKeyColumnQuals map[string]*proto.QualValue
+	// if this is a get call this will be populated with the quals as a map of column name to quals
+	//  (this will also be populated for a list call if list key columns are specified -
+	//  however this usage is deprecated and provided for legacy reasons only)
+	KeyColumnQuals KeyColumnEqualsQualMap
+	// a map of all key column quals which were specified in the query
+	Quals KeyColumnQualMap
 	// columns which have a single equals qual
 	// is this a 'get' or a 'list' call
 	FetchType fetchType
 	// query context data passed from postgres - this includes the requested columns and the quals
-	QueryContext *proto.QueryContext
+	QueryContext *QueryContext
 	// connection details - the connection name and any config declared in the connection config file
 	Connection *Connection
 	// Matrix is an array of parameter maps (MatrixItems)
@@ -42,45 +48,59 @@ type QueryData struct {
 	// event for the child list of a parent child list call
 	StreamLeafListItem func(ctx context.Context, item interface{})
 	// internal
-	hydrateCalls        []*HydrateCall
-	equalsQuals         map[string]*proto.QualValue
-	concurrencyManager  *ConcurrencyManager
-	rowDataChan         chan *RowData
-	errorChan           chan error
-	streamCount         int
-	stream              proto.WrapperPlugin_ExecuteServer
-	keyColumnQualValues map[string]interface{}
+
+	// a list of the required hydrate calls (EXCLUDING the fetch call)
+	hydrateCalls []*HydrateCall
+	// all the columns that will be returned by this query
+	columns []string
+
+	concurrencyManager *ConcurrencyManager
+	rowDataChan        chan *RowData
+	errorChan          chan error
+	streamCount        int
+
+	stream proto.WrapperPlugin_ExecuteServer
 	// wait group used to synchronise parent-child list fetches - each child hydrate function increments this wait group
-	listWg sync.WaitGroup
+	listWg *sync.WaitGroup
 	// when executing parent child list calls, we cache the parent list result in the query data passed to the child list call
-	parentItem interface{}
+	parentItem     interface{}
+	filteredMatrix []map[string]interface{}
 }
 
-func newQueryData(queryContext *proto.QueryContext, table *Table, stream proto.WrapperPlugin_ExecuteServer, connection *Connection, matrix []map[string]interface{}, connectionManager *connection_manager.Manager) *QueryData {
+func newQueryData(queryContext *QueryContext, table *Table, stream proto.WrapperPlugin_ExecuteServer, connection *Connection, matrix []map[string]interface{}, connectionManager *connection_manager.Manager) *QueryData {
+	var wg sync.WaitGroup
 	d := &QueryData{
 		ConnectionManager: connectionManager,
 		Table:             table,
 		QueryContext:      queryContext,
 		Connection:        connection,
 		Matrix:            matrix,
-		KeyColumnQuals:    map[string]*proto.QualValue{},
-		equalsQuals:       map[string]*proto.QualValue{},
+		KeyColumnQuals:    make(map[string]*proto.QualValue),
+		Quals:             make(KeyColumnQualMap),
 
 		// asyncronously read items using the 'get' or 'list' API
 		// items are streamed on rowDataChan, errors returned on errorChan
 		rowDataChan: make(chan *RowData, itemBufferSize),
 		errorChan:   make(chan error, 1),
 		stream:      stream,
+		listWg:      &wg,
 	}
 	d.StreamListItem = d.streamListItem
 	// for legacy compatibility - plugins should no longer call StreamLeafListItem directly
 	d.StreamLeafListItem = d.streamLeafListItem
-	d.SetFetchType(table)
+	d.setFetchType(table)
+	// if we have key column quals for any matrix properties, filter the matrix
+	// to exclude items which do not satisfy the quals
+	// this populates the property filteredMatrix
+	d.filterMatrixItems()
 
 	// NOTE: for count(*) queries, there will be no columns - add in 1 column so that we have some data to return
 	ensureColumns(queryContext, table)
 
+	// build list of required hydrate calls, based on requested columns
 	d.hydrateCalls = table.requiredHydrateCalls(queryContext.Columns, d.FetchType)
+	// build list of all columns returned by these hydrate calls (and the fetch call)
+	d.populateColumns()
 	d.concurrencyManager = newConcurrencyManager(table)
 
 	return d
@@ -89,95 +109,194 @@ func newQueryData(queryContext *proto.QueryContext, table *Table, stream proto.W
 // ShallowCopy creates a shallow copy of the QueryData
 // this is used to pass different quals to multiple list/get calls, when an in() clause is specified
 func (d *QueryData) ShallowCopy() *QueryData {
-	// NOTE: we create a deep copy of the keyColumnQuals
-	// - this is so they can be updated in the copied QueryData without mutating the original
-	newKeyColumQuals := map[string]*proto.QualValue{}
-
-	for k, v := range d.KeyColumnQuals {
-		newKeyColumQuals[k] = v
-	}
 
 	clone := &QueryData{
 		Table:              d.Table,
-		KeyColumnQuals:     newKeyColumQuals,
+		KeyColumnQuals:     make(map[string]*proto.QualValue),
+		Quals:              make(KeyColumnQualMap),
 		FetchType:          d.FetchType,
 		QueryContext:       d.QueryContext,
 		Connection:         d.Connection,
 		Matrix:             d.Matrix,
 		ConnectionManager:  d.ConnectionManager,
 		hydrateCalls:       d.hydrateCalls,
-		equalsQuals:        d.equalsQuals,
 		concurrencyManager: d.concurrencyManager,
 		rowDataChan:        d.rowDataChan,
 		errorChan:          d.errorChan,
 		stream:             d.stream,
+		streamCount:        d.streamCount,
 		listWg:             d.listWg,
+		columns:            d.columns,
 	}
+
+	// NOTE: we create a deep copy of the keyColumnQuals
+	// - this is so they can be updated in the copied QueryData without mutating the original
+	for k, v := range d.KeyColumnQuals {
+		clone.KeyColumnQuals[k] = v
+	}
+	for k, v := range d.Quals {
+		clone.Quals[k] = v
+	}
+
 	// NOTE: point the public streaming endpoints to their internal implementations IN THIS OBJECT
 	clone.StreamListItem = clone.streamListItem
 	clone.StreamLeafListItem = clone.streamLeafListItem
 	return clone
 }
 
-// SetFetchType determines whether this is a get or a list call, and populates the keyColumnQualValues map
-func (d *QueryData) SetFetchType(table *Table) {
-	// populate a map of column to qual value
-	var getQuals map[string]*proto.QualValue
-	var listQuals map[string]*proto.QualValue
-	var optionalListQuals map[string]*proto.QualValue
-	if table.Get != nil {
-		getQuals = table.getKeyColumnQuals(d, table.Get.KeyColumns)
+// build list of all columns returned by the fetch call and required hydrate calls
+func (d *QueryData) populateColumns() {
+	// add columns returned by fetch call
+	fetchName := helpers.GetFunctionName(d.Table.getFetchFunc(d.FetchType))
+	d.columns = append(d.columns, d.addColumnsForHydrate(fetchName)...)
+
+	// add columns returned by required hydrate calls
+	for _, h := range d.hydrateCalls {
+		d.columns = append(d.columns, d.addColumnsForHydrate(h.Name)...)
 	}
-	if table.List != nil {
-		if table.List.KeyColumns != nil {
-			listQuals = table.getKeyColumnQuals(d, table.List.KeyColumns)
-		}
-		if table.List.OptionalKeyColumns != nil {
-			optionalListQuals = table.getKeyColumnQuals(d, table.List.OptionalKeyColumns)
-		}
-	}
-	// if quals provided in query satisfy both get and list, get wins (a get is likely to be more efficient)
-	if len(getQuals) > 0 {
-		log.Printf("[INFO] get quals - this is a get call  %+v", getQuals)
-		d.KeyColumnQuals = getQuals
-		d.FetchType = fetchTypeGet
-	} else if len(listQuals)+len(optionalListQuals) > 0 {
-		log.Printf("[INFO] list quals - this is list call, list quals: %+v, optional list quals: %+v", listQuals, optionalListQuals)
-		d.KeyColumnQuals = listQuals
-		d.OptionalKeyColumnQuals = optionalListQuals
-		d.FetchType = fetchTypeList
-	} else {
-		// so we do not have required quals for either.
-		// if there is a List config, set this to be a list call, otherwise set it to get
-		// if we do not the required quals we will fail with an appropriate error
-		if table.List != nil {
-			log.Printf("[INFO] table '%s': list call, with no list quals", d.Table.Name)
-			d.FetchType = fetchTypeList
-		} else {
-			log.Printf("[INFO] no get quals passed but no list call defined - default to get call")
-			d.FetchType = fetchTypeGet
-		}
-	}
-	d.populateQualValueMap(table)
 }
 
-// populate a map of the resolved values of each key column qual
-// this is passed into transforms
-func (d *QueryData) populateQualValueMap(table *Table) {
-	qualValueMap := d.KeyColumnQuals
-	keyColumnQuals := make(map[string]interface{}, len(qualValueMap))
-	for columnName, qualValue := range qualValueMap {
-		qualColumn, ok := table.columnForName(columnName)
-		if !ok {
-			continue
-		}
-		keyColumnQuals[columnName] = ColumnQualValue(qualValue, qualColumn)
+// get the column returned by the given hydrate call
+func (d *QueryData) addColumnsForHydrate(hydrateName string) []string {
+	var cols []string
+	for _, columnName := range d.Table.hydrateColumnMap[hydrateName] {
+		cols = append(cols, columnName)
 	}
-	d.keyColumnQualValues = keyColumnQuals
+	return cols
+}
+
+// KeyColumnQualString looks for the specified key column quals and if it exists, return the value as a string
+func (d *QueryData) KeyColumnQualString(key string) string {
+	qualValue, ok := d.KeyColumnQuals[key]
+	if !ok {
+		return ""
+	}
+	return typehelpers.ToString(grpc.GetQualValue(qualValue).(string))
+}
+
+// add matrix item into KeyColumnQuals and Quals
+func (d *QueryData) updateQualsWithMatrixItem(matrixItem map[string]interface{}) {
+	for col, value := range matrixItem {
+		qualValue := proto.NewQualValue(value)
+		// replace any existing entry for both Quals and KeyColumnQuals
+		d.KeyColumnQuals[col] = qualValue
+		d.Quals[col] = &KeyColumnQuals{Name: col, Quals: []*quals.Qual{{Column: col, Value: qualValue}}}
+	}
+}
+
+// setFetchType determines whether this is a get or a list call, and populates the keyColumnQualValues map
+func (d *QueryData) setFetchType(table *Table) {
+	log.Printf("[TRACE] setFetchType")
+	if table.Get != nil {
+		// default to get, even before checking the quals
+		// this handles the case of a get call only
+		d.FetchType = fetchTypeGet
+
+		// build a qual map from Get key columns
+		qualMap := NewKeyColumnQualValueMap(d.QueryContext.UnsafeQuals, table.Get.KeyColumns)
+		// now see whether the qual map has everything required for the get call
+		if satisfied, _ := qualMap.SatisfiesKeyColumns(table.Get.KeyColumns); satisfied {
+			log.Printf("[TRACE] Set fetchType to fetchTypeGet")
+			d.KeyColumnQuals = qualMap.ToEqualsQualValueMap()
+			d.Quals = qualMap
+			d.logQualMaps()
+			return
+		}
+	}
+
+	if table.List != nil {
+		log.Printf("[TRACE] Set fetchType to fetchTypeList")
+		// if there is a list config default to list, even is we are missing required quals
+		d.FetchType = fetchTypeList
+		if len(table.List.KeyColumns) > 0 {
+			// build a qual map from List key columns
+			qualMap := NewKeyColumnQualValueMap(d.QueryContext.UnsafeQuals, table.List.KeyColumns)
+			// assign to the map of all key column quals
+			d.Quals = qualMap
+			// convert to a map of equals quals to populate legacy `KeyColumnQuals` map
+			d.KeyColumnQuals = d.Quals.ToEqualsQualValueMap()
+		}
+		d.logQualMaps()
+	}
+}
+
+func (d *QueryData) filterMatrixItems() {
+	if len(d.Matrix) == 0 {
+		return
+	}
+	log.Printf("[TRACE] filterMatrixItems - there are %d matrix items", len(d.Matrix))
+	log.Printf("[TRACE] unfiltered matrix: %v", d.Matrix)
+	var filteredMatrix []map[string]interface{}
+
+	// build a keycolumn slice from the matrix items
+	var matrixKeyColumns KeyColumnSlice
+	for column := range d.Matrix[0] {
+		matrixKeyColumns = append(matrixKeyColumns, &KeyColumn{
+			Name:      column,
+			Operators: []string{"="},
+		})
+	}
+	// now see which of these key columns are satisfied by the provided quals
+	matrixQualMap := NewKeyColumnQualValueMap(d.QueryContext.UnsafeQuals, matrixKeyColumns)
+
+	for _, m := range d.Matrix {
+		log.Printf("[TRACE] matrix item %v", m)
+		// do all key columns which exist for this matrix item match the matrix values?
+		includeMatrixItem := true
+
+		for col, val := range m {
+			log.Printf("[TRACE] col %s val %s", col, val)
+			// is there a quals for this matrix column?
+
+			if quals, ok := matrixQualMap[col]; ok {
+				log.Printf("[TRACE] quals found for matrix column: %v", quals)
+				// if there IS a single equals qual which DOES NOT match this matrix item, exclude the matrix item
+				if quals.SingleEqualsQual() {
+					includeMatrixItem = d.shouldIncludeMatrixItem(quals, val)
+				}
+			} else {
+				log.Printf("[TRACE] quals found for matrix column: %s", col)
+			}
+		}
+
+		if includeMatrixItem {
+			log.Printf("[TRACE] INCLUDE matrix item")
+			filteredMatrix = append(filteredMatrix, m)
+		} else {
+			log.Printf("[TRACE] EXCLUDE matrix item")
+		}
+	}
+	d.filteredMatrix = filteredMatrix
+	log.Printf("[TRACE] filtered matrix: %v", d.Matrix)
+
+}
+
+func (d *QueryData) shouldIncludeMatrixItem(quals *KeyColumnQuals, matrixVal interface{}) bool {
+	log.Printf("[TRACE] there is a single equals qual")
+
+	// if the value is an array, this is an IN query - check whether the array contains the matrix value
+	if listValue := quals.Quals[0].Value.GetListValue(); listValue != nil {
+		log.Printf("[TRACE] the qual value is a list: %v", listValue)
+		for _, qv := range listValue.Values {
+			if grpc.GetQualValue(qv) == matrixVal {
+				log.Printf("[TRACE] qual value list contains matrix value %v", matrixVal)
+				return true
+			}
+		}
+		return false
+	}
+
+	// otherwise it is a single qual value
+	return grpc.GetQualValue(quals.Quals[0].Value) == matrixVal
+}
+
+func (d *QueryData) logQualMaps() {
+	log.Printf("[TRACE] Equals key column quals:\n%s", d.KeyColumnQuals)
+	log.Printf("[TRACE] All key column quals:\n%s", d.Quals)
 }
 
 // for count(*) queries, there will be no columns - add in 1 column so that we have some data to return
-func ensureColumns(queryContext *proto.QueryContext, table *Table) {
+func ensureColumns(queryContext *QueryContext, table *Table) {
 	if len(queryContext.Columns) != 0 {
 		return
 	}
@@ -249,12 +368,19 @@ func (d *QueryData) verifyCallerIsListCall(callingFunction string) bool {
 	listFunction := helpers.GetFunctionName(d.Table.List.Hydrate)
 	listParentFunction := helpers.GetFunctionName(d.Table.List.ParentHydrate)
 	if callingFunction != listFunction && callingFunction != listParentFunction {
-		return false
+		// if the calling function is NOT one of the other registered hydrate functions,
+		//it must be an anonymous function so let it go
+		for _, c := range d.Table.Columns {
+			if c.Hydrate != nil && helpers.GetFunctionName(c.Hydrate) == callingFunction {
+				return false
+			}
+		}
 	}
 	return true
 }
 
 func (d *QueryData) streamLeafListItem(ctx context.Context, item interface{}) {
+
 	// create rowData, passing matrixItem from context
 	rd := newRowData(d, item)
 	rd.matrixItem = GetMatrixItem(ctx)
@@ -289,7 +415,6 @@ func (d *QueryData) streamRows(_ context.Context, rowChan chan *proto.Row) error
 				return nil
 			}
 			if err := d.streamRow(row); err != nil {
-				log.Printf("[ERROR] stream.Send returned error: %v\n", err)
 				return err
 			}
 		}
@@ -348,7 +473,7 @@ func (d *QueryData) buildRows(ctx context.Context) chan *proto.Row {
 func (d *QueryData) buildRow(ctx context.Context, rowData *RowData, rowChan chan *proto.Row, wg *sync.WaitGroup) {
 	defer func() {
 		if r := recover(); r != nil {
-			d.streamError(ToError(r))
+			d.streamError(helpers.ToError(r))
 		}
 		wg.Done()
 	}()
@@ -369,27 +494,4 @@ func (d *QueryData) waitForRowsToComplete(rowWg *sync.WaitGroup, rowChan chan *p
 	logging.DisplayProfileData(10 * time.Millisecond)
 	log.Println("[TRACE] rowWg complete - CLOSING ROW CHANNEL")
 	close(rowChan)
-}
-
-// is there a single '=' qual for this column
-func (d *QueryData) singleEqualsQual(column string) (*proto.Qual, bool) {
-	quals, ok := d.QueryContext.Quals[column]
-	if !ok {
-		return nil, false
-	}
-
-	if len(quals.Quals) == 1 && quals.Quals[0].GetStringValue() == "=" && quals.Quals[0].Value != nil {
-		return quals.Quals[0], true
-	}
-	return nil, false
-}
-
-// ToError is used to return an error or format the supplied value as error.
-// Can be removed once go-kit version 0.2.0 is released
-func ToError(val interface{}) error {
-	if e, ok := val.(error); ok {
-		return e
-	} else {
-		return fmt.Errorf("%v", val)
-	}
 }

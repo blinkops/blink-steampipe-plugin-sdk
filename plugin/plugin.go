@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"syscall"
 
-	connection_manager "github.com/turbot/steampipe-plugin-sdk/connection"
-
 	"github.com/hashicorp/go-hclog"
+	"github.com/turbot/go-kit/helpers"
+	connection_manager "github.com/turbot/steampipe-plugin-sdk/connection"
 	"github.com/turbot/steampipe-plugin-sdk/grpc/proto"
 	"github.com/turbot/steampipe-plugin-sdk/logging"
 	"github.com/turbot/steampipe-plugin-sdk/plugin/context_key"
@@ -105,13 +105,13 @@ func (p *Plugin) Execute(req *proto.ExecuteRequest, stream proto.WrapperPlugin_E
 	logging.LogTime("Start execute")
 	p.Logger.Debug("Execute ", "connection", req.Connection, "connection config", p.Connections, "table", req.Table)
 
-	queryContext := req.QueryContext
+	queryContext := NewQueryContext(req.QueryContext)
 	table, ok := p.TableMap[req.Table]
 	if !ok {
 		return fmt.Errorf("plugin %s does not provide table %s", p.Name, req.Table)
 	}
 
-	p.Logger.Debug("Got query context",
+	p.Logger.Trace("Got query context",
 		"table", req.Table,
 		"cols", queryContext.Columns)
 
@@ -121,7 +121,7 @@ func (p *Plugin) Execute(req *proto.ExecuteRequest, stream proto.WrapperPlugin_E
 	// 3) Build row spawns goroutines for any required hydrate functions.
 	// 4) When hydrate functions are complete, apply transforms to generate column values. When row is ready, send on rowChan
 	// 5) Range over rowChan - for each row, send on results stream
-	ctx := context.WithValue(context.Background(), context_key.Logger, p.Logger)
+	ctx := context.WithValue(stream.Context(), context_key.Logger, p.Logger)
 
 	var matrixItem []map[string]interface{}
 	var connection *Connection
@@ -137,7 +137,7 @@ func (p *Plugin) Execute(req *proto.ExecuteRequest, stream proto.WrapperPlugin_E
 	}
 
 	queryData := newQueryData(queryContext, table, stream, connection, matrixItem, p.ConnectionManager)
-	p.Logger.Debug("calling fetchItems", "table", table.Name, "matrixItem", matrixItem)
+	p.Logger.Trace("calling fetchItems", "table", table.Name, "matrixItem", queryData.Matrix, "limit", queryContext.Limit)
 
 	// asyncronously fetch items
 	if err := table.fetchItems(ctx, queryData); err != nil {
@@ -159,7 +159,7 @@ func (p *Plugin) SetConnectionConfig(connectionName, connectionConfigString stri
 
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("SetConnectionConfig failed: %s", ToError(r).Error())
+			err = fmt.Errorf("SetConnectionConfig failed: %s", helpers.ToError(r).Error())
 		} else {
 			p.Logger.Debug("SetConnectionConfig finished")
 		}

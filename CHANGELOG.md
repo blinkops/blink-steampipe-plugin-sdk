@@ -1,3 +1,32 @@
+## v1.4.1  [2021-07-20]
+_Bug fixes_
+* Extraneous log output removed
+
+## v1.4.0  [2021-07-20]
+_What's new_
+* Return all columns provided by hydrate functions, not just requested columns. ([#156](https://github.com/turbot/steampipe-plugin-sdk/issues/156))
+
+_Bug fixes_
+* Fix matrix parameters not being added to the KeyColumns map passed to hydrate functions. ([#151](https://github.com/turbot/steampipe-plugin-sdk/issues/151))
+
+## v1.3.1  [2021-07-15]
+_Bug fixes_
+* Fix crash caused by thread sync issue with multi-region union queries. ([#149](https://github.com/turbot/steampipe-plugin-sdk/issues/149))
+* When checking if StreamListItem is called from a non-list function, do not through errors for anonymous functions. ([#147](https://github.com/turbot/steampipe-plugin-sdk/issues/147))
+
+## v1.3.0  [2021-07-09]
+
+_What's new_
+* When defining key columns it is now possible to specify supported operators for each column (defaulting to '='). ([#121](https://github.com/turbot/steampipe-plugin-sdk/issues/121))
+* Add support for optional key columns. ([#112](https://github.com/turbot/steampipe-plugin-sdk/issues/112))
+* Cancellation of GRPC stream is now reflected in the context passed to plugin operations, so plugins can easily handle cancellation by checking the context. ([#17](https://github.com/turbot/steampipe-plugin-sdk/issues/17))
+* Add IsCancelled() function to simplify plugins checking for a cancelled context. ([#143](https://github.com/turbot/steampipe-plugin-sdk/issues/143))
+* Add WithCache() function - if this is chained after a hydrate function definition, it enables plugin cache optimisation to avoid concurrent hydrate functions with same parameters. ([#116](https://github.com/turbot/steampipe-plugin-sdk/issues/116))
+
+_Breaking changes_
+* The property `QueryData.QueryContext.Quals` has been renamed to `QueryContext.UnsafeQuals`. This property contains all quals, not just key columns. These quals should not be used for filtering data as this may break the FDW row data caching, which is keyed based on key column quals. Instead, use the new property `QueryData.Quals`which contains only key column quals. ([#119](https://github.com/turbot/steampipe-plugin-sdk/issues/119))
+* Plugins built with `v1.3` of the sdk will only be loaded by Steampipe `v0.6.2` onwards.
+
 ## v0.2.10 [2021-06-09]
 _What's new_
 * Provide SDK transform to get a qual value. ([#77](https://github.com/turbot/steampipe-plugin-sdk/issues/77))
@@ -77,3 +106,4 @@ _What's new?_
 _Bug fixes_
 * Fix ToLower and ToUpper transforms not working when input value is a with string pointers. ([#13](https://github.com/turbot/steampipe-plugin-sdk/issues/13))
 * Fix failure to report errors returned from Get function. ([#23](https://github.com/turbot/steampipe-plugin-sdk/issues/23))
+
