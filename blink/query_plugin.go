@@ -2,11 +2,13 @@ package blink
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"errors"
 	"fmt"
 	blinkPlugin "github.com/blinkops/blink-sdk/plugin"
 	"github.com/blinkops/blink-sdk/plugin/connections"
+	"github.com/turbot/steampipe-plugin-sdk/connection"
 	"github.com/turbot/steampipe-plugin-sdk/grpc/proto"
 	steamPlugin "github.com/turbot/steampipe-plugin-sdk/plugin"
 	"google.golang.org/grpc/metadata"
@@ -149,23 +151,39 @@ func (q *QueryPlugin) ExecuteAction(actionContext *blinkPlugin.ActionContext, re
 	if err != nil {
 		return nil, err
 	}
+
 	tableName := request.Name
 	err = q.addColumnNames(queryContext, tableName)
 	if err != nil {
 		return nil, err
 	}
+
 	stream := &ResultStream{}
 	executeRequest := &proto.ExecuteRequest{Table: tableName, QueryContext: queryContext}
+
+	// Create context with actionContext and timeout for plugins to use
 	ctx := context.WithValue(context.TODO(), ActionContextKey, actionContext)
-	ctx = context.WithValue(ctx, "timeout", time.Duration(request.Timeout) * time.Second)
+	ctx = context.WithValue(ctx, "timeout", time.Duration(request.Timeout)*time.Second)
+	ctx = addConnectionsToContext(ctx, actionContext.GetAllConnections())
+
 	err = q.SteamPipePlugin.Execute0(ctx, executeRequest, stream)
 	if err != nil {
 		return nil, err
 	}
+
 	return &blinkPlugin.ExecuteActionResponse{
 		Rows: stream.rows,
 	}, nil
 
+}
+
+func addConnectionsToContext(ctx context.Context, connections map[string]connections.ConnectionInstance) context.Context {
+	js, err := json.Marshal(connections)
+	if err != nil {
+		return ctx
+	}
+	md := fmt.Sprintf("%x", md5.Sum(js))
+	return context.WithValue(ctx, connection.CacheConnectionKey, md)
 }
 
 func convertQueryContext(request *blinkPlugin.ExecuteActionRequest) (*proto.QueryContext, error) {
@@ -175,10 +193,12 @@ func convertQueryContext(request *blinkPlugin.ExecuteActionRequest) (*proto.Quer
 	if !ok {
 		return pqc, nil
 	}
+
 	err := json.Unmarshal([]byte(queryContext), &qc)
 	if err != nil {
 		return nil, err
 	}
+
 	for name, constraintList := range qc.Constraints {
 		quals := &proto.Quals{}
 		for _, constraint := range constraintList.Constraints {

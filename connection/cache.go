@@ -1,12 +1,16 @@
 package connection
 
 import (
+	"context"
+	"fmt"
 	"time"
 
 	"github.com/dgraph-io/ristretto"
 )
 
-// simple cache implemented using ristretto cache library
+const CacheConnectionKey = "CacheConnectionKey"
+
+// Cache simple cache implemented using ristretto cache library
 type Cache struct {
 	cache *ristretto.Cache
 }
@@ -26,7 +30,8 @@ func NewCache(config *ristretto.Config) *Cache {
 	return &Cache{cache}
 }
 
-func (cache *Cache) Set(key string, value interface{}) bool {
+func (cache *Cache) Set(ctx context.Context, key string, value interface{}) bool {
+	key = addConnectionKey(ctx, key)
 	ttl := 1 * time.Hour
 	res := cache.cache.SetWithTTL(key, value, 1, ttl)
 	// wait for value to pass through buffers
@@ -34,6 +39,15 @@ func (cache *Cache) Set(key string, value interface{}) bool {
 	return res
 }
 
-func (cache *Cache) Get(key string) (interface{}, bool) {
+func (cache *Cache) Get(ctx context.Context, key string) (interface{}, bool) {
+	key = addConnectionKey(ctx, key)
 	return cache.cache.Get(key)
+}
+
+func addConnectionKey(ctx context.Context, key string) string {
+	conKey := ctx.Value(CacheConnectionKey)
+	if conKey == nil {
+		return key
+	}
+	return fmt.Sprintf("%s-%s", key, conKey)
 }

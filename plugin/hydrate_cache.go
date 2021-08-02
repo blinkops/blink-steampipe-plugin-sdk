@@ -41,7 +41,7 @@ func (hydrate HydrateFunc) WithCache(args ...HydrateFunc) HydrateFunc {
 			// so at this point, there is no hydrate function running - we hope the data is in the cache
 			// (but it may not be - if there was an error)
 			// look in the cache to see if the data is there
-			cachedData, ok := d.ConnectionManager.Cache.Get(cacheKey)
+			cachedData, ok := d.ConnectionManager.Cache.Get(ctx, cacheKey)
 			if ok {
 				log.Printf("[TRACE] WithCache CACHE HIT key %s", cacheKey)
 				// we got the data
@@ -98,7 +98,7 @@ func callAndCacheHydrate(ctx context.Context, d *QueryData, h *HydrateData, hydr
 	}
 
 	// so we have a hydrate result - add to the cache
-	d.ConnectionManager.Cache.Set(cacheKey, hydrateData)
+	d.ConnectionManager.Cache.Set(ctx, cacheKey, hydrateData)
 	// return the hydrate data
 	return hydrateData, nil
 }
