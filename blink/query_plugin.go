@@ -20,7 +20,9 @@ const ActionContextKey = "actionContext"
 type QueryPlugin struct {
 	Description     blinkPlugin.Description
 	SteamPipePlugin *steamPlugin.Plugin
+	TestCredentialsFunc func(ctx *blinkPlugin.ActionContext) (*blinkPlugin.CredentialsValidationResponse, error)
 }
+
 
 func (q *QueryPlugin) Describe() blinkPlugin.Description {
 	return q.Description
@@ -282,8 +284,13 @@ const (
 	OperatorUnique                       = 1
 )
 
-func (q *QueryPlugin) TestCredentials(_ map[string]connections.ConnectionInstance) (*blinkPlugin.CredentialsValidationResponse, error) {
-	return nil, nil
+func (q *QueryPlugin) TestCredentials(conn map[string]connections.ConnectionInstance) (*blinkPlugin.CredentialsValidationResponse, error) {
+	if q.TestCredentialsFunc == nil {
+		return nil, nil
+	}
+
+	return q.TestCredentialsFunc(blinkPlugin.NewActionContext(nil, conn))
+
 }
 
 func (q *QueryPlugin) addColumnNames(queryContext *proto.QueryContext, tableName string) error {
