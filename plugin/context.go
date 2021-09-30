@@ -3,7 +3,6 @@ package plugin
 import (
 	"context"
 	"errors"
-
 	"github.com/turbot/steampipe-plugin-sdk/plugin/context_key"
 
 	"github.com/hashicorp/go-hclog"
@@ -11,6 +10,10 @@ import (
 
 // Logger extracts the logger from the context
 func Logger(ctx context.Context) hclog.Logger {
+	if ctx.Value(context_key.Logger) == nil {
+		return hclog.New(hclog.DefaultOptions)
+	}
+
 	return ctx.Value(context_key.Logger).(hclog.Logger)
 }
 
