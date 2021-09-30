@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"errors"
+
 	"github.com/turbot/steampipe-plugin-sdk/plugin/context_key"
 
 	"github.com/hashicorp/go-hclog"
