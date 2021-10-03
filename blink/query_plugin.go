@@ -286,7 +286,7 @@ const (
 
 func (q *QueryPlugin) TestCredentials(conn map[string]connections.ConnectionInstance) (*blinkPlugin.CredentialsValidationResponse, error) {
 	if q.TestCredentialsFunc == nil {
-		return nil, nil
+		return nil, errors.New("no TestCredentials function found")
 	}
 
 	return q.TestCredentialsFunc(blinkPlugin.NewActionContext(nil, conn))
