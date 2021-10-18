@@ -83,6 +83,7 @@ message SetConnectionConfigRequest{
   string connection_name = 1;
   string connection_config = 2;
 }
+
 message SetConnectionConfigResponse{}
 
 service WrapperPlugin {
@@ -128,6 +129,7 @@ message Schema {
   map<string, TableSchema> schema = 1;
   string sdk_version = 2;
   int64 protocol_version = 3;
+  string mode = 4;
 }
 
 message Column {

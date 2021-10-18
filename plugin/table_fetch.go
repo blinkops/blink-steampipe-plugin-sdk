@@ -13,6 +13,7 @@ import (
 	"github.com/turbot/steampipe-plugin-sdk/logging"
 	"github.com/turbot/steampipe-plugin-sdk/plugin/context_key"
 	"github.com/turbot/steampipe-plugin-sdk/plugin/quals"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -68,7 +69,8 @@ func (t *Table) fetchItems(ctx context.Context, queryData *QueryData) error {
 //  execute a get call for every value in the key column quals
 func (t *Table) executeGetCall(ctx context.Context, queryData *QueryData) (err error) {
 	logger := t.Plugin.Logger
-	logger.Trace("executeGetCall", "table", t.Name, "queryData.KeyColumnQuals", queryData.KeyColumnQuals)
+	log.Printf("[WARN] executeGetCall key columns %v", t.Get.KeyColumns)
+	logger.Warn("executeGetCall", "table", t.Name, "queryData.KeyColumnQuals", queryData.KeyColumnQuals)
 	// verify we have the necessary quals
 	if len(queryData.KeyColumnQuals) == 0 {
 		return status.Error(codes.Internal, fmt.Sprintf("'Get' call requires an '=' qual for %s", t.Get.KeyColumns.String()))
@@ -83,12 +85,11 @@ func (t *Table) executeGetCall(ctx context.Context, queryData *QueryData) (err e
 	}()
 
 	// queryData.KeyColumnQuals is a map of column to qual value
-	// NOTE: if there is a SINGLE key column, the qual value may be a list of values
+	// NOTE: if there is a SINGLE or ANY key columns, the qual value may be a list of values
 	// in this case we call get for each value
-	if keyColumn := t.Get.KeyColumns.SingleEqualsQual(); keyColumn != nil {
-		if qualValueList := queryData.KeyColumnQuals[keyColumn.Name].GetListValue(); qualValueList != nil {
-			return t.doGetForQualValues(ctx, queryData, keyColumn.Name, qualValueList)
-		}
+	qualValueList, keyColumn := t.getQualValueList(queryData)
+	if qualValueList != nil {
+		return t.doGetForQualValues(ctx, queryData, keyColumn.Name, qualValueList)
 	}
 
 	// so there is NOT a list of qual values, just call get once
@@ -96,9 +97,30 @@ func (t *Table) executeGetCall(ctx context.Context, queryData *QueryData) (err e
 	return t.doGet(ctx, queryData, nil)
 }
 
+// if there is a SINGLE or ANY key columns, determine whether the qual value is a list of values
+// if so return the list and the key column
+func (t *Table) getQualValueList(queryData *QueryData) (*proto.QualValueList, *KeyColumn) {
+	var qualValueList *proto.QualValueList
+
+	// is there a single equals key column
+	if keyColumn := t.Get.KeyColumns.SingleEqualsQual(); keyColumn != nil {
+		return queryData.KeyColumnQuals[keyColumn.Name].GetListValue(), keyColumn
+	}
+
+	// if any_of key columns are defined, check each ofd them to see if a 'list qual value was passed
+	if t.Get.KeyColumns.IsAnyOf() {
+		for _, keyColumn := range t.Get.KeyColumns {
+			if qualValueList = queryData.KeyColumnQuals[keyColumn.Name].GetListValue(); qualValueList != nil {
+				return qualValueList, keyColumn
+			}
+		}
+	}
+	return nil, nil
+}
+
 func (t *Table) doGetForQualValues(ctx context.Context, queryData *QueryData, keyColumn string, qualValueList *proto.QualValueList) error {
 	logger := t.Plugin.Logger
-	logger.Trace("executeGetCall - single qual, qual value is a list - executing get for each qual value item", "qualValueList", qualValueList)
+	logger.Warn("executeGetCall - single qual, qual value is a list - executing get for each qual value item", "qualValueList", qualValueList)
 
 	var getWg sync.WaitGroup
 	var errorChan = make(chan (error), len(qualValueList.Values))
@@ -151,6 +173,7 @@ func (t *Table) doGet(ctx context.Context, queryData *QueryData, hydrateItem int
 	if len(queryData.Matrix) == 0 {
 		retryConfig, shouldIgnoreError := t.buildGetConfig()
 
+		log.Printf("[WARN] doing GET %v", queryData.KeyColumnQuals)
 		// just invoke callHydrateWithRetries()
 		getItem, err = rd.callHydrateWithRetries(ctx, queryData, t.Get.Hydrate, retryConfig, shouldIgnoreError)
 
@@ -165,7 +188,7 @@ func (t *Table) doGet(ctx context.Context, queryData *QueryData, hydrateItem int
 	}
 
 	// if there is no error and the getItem is nil, we assume the item does not exist
-	if getItem != nil {
+	if !helpers.IsNil(getItem) {
 		// set the rowData Item to the result of the Get hydrate call - this will be passed through to all other hydrate calls
 		rd.Item = getItem
 		// NOTE: explicitly set the get hydrate results on rowData
@@ -180,7 +203,7 @@ func (t *Table) doGet(ctx context.Context, queryData *QueryData, hydrateItem int
 // enables multi-partition fetching
 func (t *Table) getForEach(ctx context.Context, queryData *QueryData, rd *RowData) (interface{}, error) {
 
-	log.Printf("[TRACE] getForEach, matrixItem list: %v\n", queryData.Matrix)
+	log.Printf("[TRACE] getForEach, matrixItem list: %v\n", queryData.filteredMatrix)
 
 	var wg sync.WaitGroup
 	errorChan := make(chan error, len(queryData.Matrix))
@@ -227,7 +250,7 @@ func (t *Table) getForEach(ctx context.Context, queryData *QueryData, rd *RowDat
 			if err != nil {
 				log.Printf("[TRACE] callHydrateWithRetries returned error %v", err)
 				errorChan <- err
-			} else if item != nil {
+			} else if !helpers.IsNil(item) {
 				// stream the get item AND the matrix item
 				resultChan <- &resultWithMetadata{item, matrixItem}
 			}
@@ -300,9 +323,9 @@ func (t *Table) executeListCall(ctx context.Context, queryData *QueryData) {
 	}()
 
 	// verify we have the necessary quals
-	isSatisfied, unsatisfiedColumns := queryData.Quals.SatisfiesKeyColumns(t.List.KeyColumns)
-	if !isSatisfied {
-		err := status.Error(codes.Internal, fmt.Sprintf("'List' call is missing required quals: \n%s", unsatisfiedColumns.String()))
+	unsatisfiedColumns := queryData.Quals.GetUnsatisfiedKeyColumns(t.List.KeyColumns)
+	if len(unsatisfiedColumns) > 0 {
+		err := status.Error(codes.Internal, fmt.Sprintf("'List' call is missing required quals: %s", unsatisfiedColumns.String()))
 		queryData.streamError(err)
 		return
 	}

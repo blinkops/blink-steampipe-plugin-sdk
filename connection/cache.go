@@ -32,7 +32,10 @@ func NewCache(config *ristretto.Config) *Cache {
 
 func (cache *Cache) Set(ctx context.Context, key string, value interface{}) bool {
 	key = addConnectionKey(ctx, key)
-	ttl := 1 * time.Hour
+	return cache.SetWithTTL(key, value, 1*time.Hour)
+}
+
+func (cache *Cache) SetWithTTL(key string, value interface{}, ttl time.Duration) bool {
 	res := cache.cache.SetWithTTL(key, value, 1, ttl)
 	// wait for value to pass through buffers
 	time.Sleep(10 * time.Millisecond)
@@ -50,4 +53,8 @@ func addConnectionKey(ctx context.Context, key string) string {
 		return key
 	}
 	return fmt.Sprintf("%s-%s", key, conKey)
+}
+
+func (cache *Cache) Delete(key string) {
+	cache.cache.Del(key)
 }

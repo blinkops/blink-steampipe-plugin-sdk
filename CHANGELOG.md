@@ -1,3 +1,33 @@
+## v1.7.0  [2021-10-18]
+_What's new_
+* Add dynamic schema support - add `SchemaMode` property to Plugin. If this is set to `dynamic`, Steampipe will check for plugin schema changes on startup. ([#195](https://github.com/turbot/steampipe-plugin-sdk/issues/195))
+
+## v1.6.2  [2021-10-08]
+_Bug fixes_
+* Fix `in` clause not working when the table has `any_of` key columns. ([#189](https://github.com/turbot/steampipe-plugin-sdk/issues/189))
+* Fix transform functions being called with null data when the `Get` call returns a null item but no error. ([#186](https://github.com/turbot/steampipe-plugin-sdk/issues/186))
+
+## v1.6.1  [2021-09-21]
+_Bug fixes_
+* Pass context to table creation callback `TableMapFunc`. ([#183](https://github.com/turbot/steampipe-plugin-sdk/issues/183))
+
+## v1.6.0  [2021-09-21]
+_What's new_
+* Add `QueryStatus.RowsRemaining` function which performs context cancellation and limit checking to determine how much more data the plugin should provide. ([#177](https://github.com/turbot/steampipe-plugin-sdk/issues/177))
+  * This function is used internally by StreamListItem to avoid calling hydrate functions once sufficient data has been returned. 
+  * It may also be called directly by the plugin to avoid retrieving unneeded data from the external API
+* Enable plugin table creation to use the connection config. New plugin property has been added: `TableMapFunc`. This can be set to a table creation function which, when invoked, has access to the parsed connection config. ([#180](https://github.com/turbot/steampipe-plugin-sdk/issues/180))
+
+## v1.5.1  [2021-09-13]
+_Bug fixes_
+* Fix `get` call returning nothing if there is an `in` clause for the key column, and matrix parameters are used. ([#170](https://github.com/turbot/steampipe-plugin-sdk/issues/170))
+
+## v1.5.0  [2021-08-06]
+_What's new_ 
+* Add cache functions `SetWithTTL` and `Delete`. ([#163](https://github.com/turbot/steampipe-plugin-sdk/issues/163))
+
+_Bug fixes_
+* When listing missing quals, only report required quals. ([#159](https://github.com/turbot/steampipe-plugin-sdk/issues/159))
 ## v1.4.1  [2021-07-20]
 _Bug fixes_
 * Extraneous log output removed

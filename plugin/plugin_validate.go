@@ -1,8 +1,11 @@
 package plugin
 
 import (
+	"fmt"
 	"log"
 	"strings"
+
+	"github.com/turbot/go-kit/helpers"
 )
 
 func (p *Plugin) Validate() string {
@@ -14,5 +17,11 @@ func (p *Plugin) Validate() string {
 	if p.ConnectionConfigSchema != nil {
 		validationErrors = append(validationErrors, p.ConnectionConfigSchema.Validate()...)
 	}
+
+	// validate the schema mode
+	if !helpers.StringSliceContains(validSchemaModes, p.SchemaMode) {
+		validationErrors = append(validationErrors, fmt.Sprintf("schema mode must be either %s or %s (if not specified it defaults to %s)", SchemaModeStatic, SchemaModeDynamic, SchemaModeStatic))
+	}
+
 	return strings.Join(validationErrors, "\n")
 }
