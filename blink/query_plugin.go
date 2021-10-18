@@ -177,7 +177,7 @@ func (q *QueryPlugin) ExecuteAction(actionContext *blinkPlugin.ActionContext, re
 
 }
 
-func addConnectionsToContext(ctx context.Context, connections map[string]connections.ConnectionInstance) context.Context {
+func addConnectionsToContext(ctx context.Context, connections map[string]*connections.ConnectionInstance) context.Context {
 	js, err := json.Marshal(connections)
 	if err != nil {
 		return ctx
@@ -282,7 +282,7 @@ const (
 	OperatorUnique                       = 1
 )
 
-func (q *QueryPlugin) TestCredentials(_ map[string]connections.ConnectionInstance) (*blinkPlugin.CredentialsValidationResponse, error) {
+func (q *QueryPlugin) TestCredentials(_ map[string]*connections.ConnectionInstance) (*blinkPlugin.CredentialsValidationResponse, error) {
 	return nil, nil
 }
 
