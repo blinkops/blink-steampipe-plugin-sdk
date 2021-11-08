@@ -9,6 +9,7 @@ import (
 	blinkPlugin "github.com/blinkops/blink-sdk/plugin"
 	"github.com/blinkops/blink-sdk/plugin/connections"
 	"github.com/blinkops/blink-sdk/plugin/sdk_query"
+	"github.com/prometheus/common/log"
 	"github.com/turbot/steampipe-plugin-sdk/connection"
 	"github.com/turbot/steampipe-plugin-sdk/grpc/proto"
 	steamPlugin "github.com/turbot/steampipe-plugin-sdk/plugin"
@@ -84,7 +85,9 @@ type ResultStream struct {
 
 func (r *ResultStream) Send(response *proto.ExecuteResponse) error {
 	if r.maxRows > 0 && len(r.rows) >= r.maxRows {
-		return errors.New(fmt.Sprintf("limit of rows reached: %d", r.maxRows))
+		err := errors.New(fmt.Sprintf("limit of rows reached: %d", r.maxRows))
+		log.Error(err)
+		return err
 	}
 	row := map[string]string{}
 	for name, col := range response.Row.GetColumns() {
