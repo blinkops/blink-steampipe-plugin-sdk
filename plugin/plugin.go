@@ -3,9 +3,11 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"github.com/blinkops/blink-sdk/plugin/sdk_query"
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/hashicorp/go-hclog"
@@ -248,7 +250,7 @@ func (p *Plugin) Execute(req *proto.ExecuteRequest, stream proto.WrapperPlugin_E
 }
 
 // Execute0 executes a query and stream the results
-func (p *Plugin) Execute0(ctx context.Context, req *proto.ExecuteRequest, stream proto.WrapperPlugin_ExecuteServer) (err error) {
+func (p *Plugin) Execute0(ctx context.Context, req *proto.ExecuteRequest, stream proto.WrapperPlugin_ExecuteServer, sdkQueryContext *sdk_query.QueryContext) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			if e, ok := r.(error); ok {
@@ -263,6 +265,8 @@ func (p *Plugin) Execute0(ctx context.Context, req *proto.ExecuteRequest, stream
 	p.Logger.Debug("Execute ", "connection", req.Connection, "table", req.Table)
 
 	queryContext := NewQueryContext(req.QueryContext)
+	p.copyBlinkFields(queryContext, sdkQueryContext)
+
 	table, ok := p.TableMap[req.Table]
 	if !ok {
 		return fmt.Errorf("plugin %s does not provide table %s", p.Name, req.Table)
@@ -301,5 +305,18 @@ func (p *Plugin) Execute0(ctx context.Context, req *proto.ExecuteRequest, stream
 	rowChan := queryData.buildRows(ctx)
 	logging.LogTime("Calling build Stream")
 	// asyncronously stream rows
-	return queryData.streamRows(ctx, rowChan)
+	err = queryData.streamRows(ctx, rowChan)
+	if err != nil && strings.HasPrefix(err.Error(), "limit of rows reached") {
+		p.Logger.Error(err.Error())
+		return nil
+	}
+	return err
+}
+
+func (p *Plugin) copyBlinkFields(queryContext *QueryContext, sdkQueryContext *sdk_query.QueryContext) {
+	queryContext.BlinkLimit = sdkQueryContext.Limit
+	queryContext.BlinkOffset = sdkQueryContext.Offset
+	queryContext.BlinkOrderBy = sdkQueryContext.OrderBy
+	queryContext.BlinkDesc = sdkQueryContext.Desc
+	queryContext.BlinkMaxRows = sdkQueryContext.MaxRows
 }

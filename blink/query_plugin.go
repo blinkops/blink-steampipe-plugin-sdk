@@ -8,6 +8,7 @@ import (
 	"fmt"
 	blinkPlugin "github.com/blinkops/blink-sdk/plugin"
 	"github.com/blinkops/blink-sdk/plugin/connections"
+	"github.com/blinkops/blink-sdk/plugin/sdk_query"
 	"github.com/turbot/steampipe-plugin-sdk/connection"
 	"github.com/turbot/steampipe-plugin-sdk/grpc/proto"
 	steamPlugin "github.com/turbot/steampipe-plugin-sdk/plugin"
@@ -78,9 +79,13 @@ func convertFieldType(columnType proto.ColumnType) string {
 
 type ResultStream struct {
 	rows []map[string]string
+	maxRows int
 }
 
 func (r *ResultStream) Send(response *proto.ExecuteResponse) error {
+	if r.maxRows > 0 && len(r.rows) >= r.maxRows {
+		return errors.New(fmt.Sprintf("limit of rows reached: %d", r.maxRows))
+	}
 	row := map[string]string{}
 	for name, col := range response.Row.GetColumns() {
 		row[name] = stringValue(col)
@@ -149,26 +154,26 @@ func (q *QueryPlugin) ExecuteAction(actionContext *blinkPlugin.ActionContext, re
 		}
 	}()
 
-	queryContext, err := convertQueryContext(request)
+	protoQueryContext, sdkQueryContext, err := convertQueryContext(request)
 	if err != nil {
 		return nil, err
 	}
 
 	tableName := request.Name
-	err = q.addColumnNames(queryContext, tableName)
+	err = q.addColumnNames(protoQueryContext, tableName)
 	if err != nil {
 		return nil, err
 	}
 
-	stream := &ResultStream{}
-	executeRequest := &proto.ExecuteRequest{Table: tableName, QueryContext: queryContext}
+	stream := &ResultStream{maxRows: sdkQueryContext.MaxRows}
+	executeRequest := &proto.ExecuteRequest{Table: tableName, QueryContext: protoQueryContext}
 
 	// Create context with actionContext and timeout for plugins to use
 	ctx := context.WithValue(context.TODO(), ActionContextKey, actionContext)
 	ctx = context.WithValue(ctx, "timeout", time.Duration(request.Timeout)*time.Second)
 	ctx = addConnectionsToContext(ctx, actionContext.GetAllConnections())
 
-	err = q.SteamPipePlugin.Execute0(ctx, executeRequest, stream)
+	err = q.SteamPipePlugin.Execute0(ctx, executeRequest, stream, sdkQueryContext)
 	if err != nil {
 		return nil, err
 	}
@@ -188,17 +193,17 @@ func addConnectionsToContext(ctx context.Context, connections map[string]*connec
 	return context.WithValue(ctx, connection.CacheConnectionKey, md)
 }
 
-func convertQueryContext(request *blinkPlugin.ExecuteActionRequest) (*proto.QueryContext, error) {
+func convertQueryContext(request *blinkPlugin.ExecuteActionRequest) (*proto.QueryContext, *sdk_query.QueryContext, error) {
 	pqc := &proto.QueryContext{Quals: map[string]*proto.Quals{}}
-	var qc QueryContext
+	var qc sdk_query.QueryContext
 	queryContext, ok := request.Parameters["query.ctx"]
 	if !ok {
-		return pqc, nil
+		return nil, nil, errors.New("sdk query context not found in parameters with key query.ctx")
 	}
 
 	err := json.Unmarshal([]byte(queryContext), &qc)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	for name, constraintList := range qc.Constraints {
@@ -215,74 +220,34 @@ func convertQueryContext(request *blinkPlugin.ExecuteActionRequest) (*proto.Quer
 		}
 		pqc.Quals[name] = quals
 	}
-	return pqc, nil
+	return pqc, &qc, nil
 }
 
-func convertOperator(operator Operator) string {
+func convertOperator(operator sdk_query.Op) string {
 	switch operator {
-	case OperatorEquals:
+	case sdk_query.OpEQ:
 		return "="
-	case OperatorGreaterThan:
+	case sdk_query.OpGT:
 		return ">"
-	case OperatorLessThanOrEquals:
+	case sdk_query.OpLE:
 		return "<="
-	case OperatorLessThan:
+	case sdk_query.OpLT:
 		return "<"
-	case OperatorGreaterThanOrEquals:
+	case sdk_query.OpGE:
 		return ">="
-	case OperatorMatch: // what?
+	case sdk_query.OpLIKE:
 		return "like"
-	case OperatorLike:
+	case sdk_query.OpMATCH:
 		return "like"
-	case OperatorGlob: // what?
+	case sdk_query.OpGLOB: // what?
 		return "like"
-	case OperatorRegexp: // what?
+	case sdk_query.OpREGEXP: // what?
 		return "like"
-	case OperatorUnique: // what?
+	case sdk_query.OpScanUnique: // what?
 		return "unique"
 	}
 	return "unsupported"
 }
-
-// QueryContext contains the constraints from the WHERE clause of the query,
-// that can optionally be used to optimize the table generation. Note that the
-// osquery SQLite engine will perform the filtering with these constraints, so
-// it is not mandatory that they be used in table generation.
-type QueryContext struct {
-	// Constraints is a map from column name to the details of the
-	// constraints on that column.
-	Constraints map[string]ConstraintList
-}
-
-// ConstraintList contains the details of the constraints for the given column.
-type ConstraintList struct {
-	Affinity    string
-	Constraints []Constraint
-}
-
-// Constraint contains both an operator and an expression that are applied as
-// constraints in the query.
-type Constraint struct {
-	Operator   Operator
-	Expression string
-}
-
-// Operator is an enum of the osquery operators.
-type Operator int
-
-// The following operators are defined in osquery tables.h.
-const (
-	OperatorEquals              Operator = 2
-	OperatorGreaterThan                  = 4
-	OperatorLessThanOrEquals             = 8
-	OperatorLessThan                     = 16
-	OperatorGreaterThanOrEquals          = 32
-	OperatorMatch                        = 64
-	OperatorLike                         = 65
-	OperatorGlob                         = 66
-	OperatorRegexp                       = 67
-	OperatorUnique                       = 1
-)
 
 func (q *QueryPlugin) TestCredentials(conn map[string]*connections.ConnectionInstance) (*blinkPlugin.CredentialsValidationResponse, error) {
 	if q.TestCredentialsFunc == nil {

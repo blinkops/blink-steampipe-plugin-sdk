@@ -8,6 +8,13 @@ type QueryContext struct {
 	Columns     []string
 	UnsafeQuals map[string]*proto.Quals
 	Limit       *int64
+
+	// Blink fields
+	BlinkLimit   int
+	BlinkOffset  int
+	BlinkOrderBy []string
+	BlinkDesc    bool
+	BlinkMaxRows int
 }
 
 // NewQueryContext maps from a proto.QueryContext to a plugin.QueryContext.
