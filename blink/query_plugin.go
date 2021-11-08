@@ -9,11 +9,11 @@ import (
 	blinkPlugin "github.com/blinkops/blink-sdk/plugin"
 	"github.com/blinkops/blink-sdk/plugin/connections"
 	"github.com/blinkops/blink-sdk/plugin/sdk_query"
-	"github.com/prometheus/common/log"
 	"github.com/turbot/steampipe-plugin-sdk/connection"
 	"github.com/turbot/steampipe-plugin-sdk/grpc/proto"
 	steamPlugin "github.com/turbot/steampipe-plugin-sdk/plugin"
 	"google.golang.org/grpc/metadata"
+	"strings"
 	"time"
 )
 
@@ -86,7 +86,6 @@ type ResultStream struct {
 func (r *ResultStream) Send(response *proto.ExecuteResponse) error {
 	if r.maxRows > 0 && len(r.rows) >= r.maxRows {
 		err := errors.New(fmt.Sprintf("limit of rows reached: %d", r.maxRows))
-		log.Error(err)
 		return err
 	}
 	row := map[string]string{}
@@ -177,14 +176,17 @@ func (q *QueryPlugin) ExecuteAction(actionContext *blinkPlugin.ActionContext, re
 	ctx = addConnectionsToContext(ctx, actionContext.GetAllConnections())
 
 	err = q.SteamPipePlugin.Execute0(ctx, executeRequest, stream, sdkQueryContext)
-	if err != nil {
-		return nil, err
-	}
-
-	return &blinkPlugin.ExecuteActionResponse{
+	response = &blinkPlugin.ExecuteActionResponse{
 		Rows: stream.rows,
-	}, nil
-
+	}
+	if err != nil {
+		q.SteamPipePlugin.Logger.Error(err.Error())
+		if strings.Contains(err.Error(), "limit of rows reached") {
+			response.ErrorMessage = err.Error()
+			return response, nil
+		}
+	}
+	return response, err
 }
 
 func addConnectionsToContext(ctx context.Context, connections map[string]*connections.ConnectionInstance) context.Context {

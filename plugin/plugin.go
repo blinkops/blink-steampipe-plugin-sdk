@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"strings"
 	"syscall"
 
 	"github.com/hashicorp/go-hclog"
@@ -306,10 +305,6 @@ func (p *Plugin) Execute0(ctx context.Context, req *proto.ExecuteRequest, stream
 	logging.LogTime("Calling build Stream")
 	// asyncronously stream rows
 	err = queryData.streamRows(ctx, rowChan)
-	if err != nil && strings.HasPrefix(err.Error(), "limit of rows reached") {
-		p.Logger.Error(err.Error())
-		return nil
-	}
 	return err
 }
 
