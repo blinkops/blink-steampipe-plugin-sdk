@@ -20,11 +20,10 @@ import (
 const ActionContextKey = "actionContext"
 
 type QueryPlugin struct {
-	Description     blinkPlugin.Description
-	SteamPipePlugin *steamPlugin.Plugin
+	Description         blinkPlugin.Description
+	SteamPipePlugin     *steamPlugin.Plugin
 	TestCredentialsFunc func(ctx *blinkPlugin.ActionContext) (*blinkPlugin.CredentialsValidationResponse, error)
 }
-
 
 func (q *QueryPlugin) Describe() blinkPlugin.Description {
 	return q.Description
@@ -79,15 +78,11 @@ func convertFieldType(columnType proto.ColumnType) string {
 }
 
 type ResultStream struct {
-	rows []map[string]string
+	rows    []map[string]string
 	maxRows int
 }
 
 func (r *ResultStream) Send(response *proto.ExecuteResponse) error {
-	if r.maxRows > 0 && len(r.rows) >= r.maxRows {
-		err := errors.New(fmt.Sprintf("limit of rows reached: %d", r.maxRows))
-		return err
-	}
 	row := map[string]string{}
 	for name, col := range response.Row.GetColumns() {
 		row[name] = stringValue(col)
@@ -156,7 +151,7 @@ func (q *QueryPlugin) ExecuteAction(actionContext *blinkPlugin.ActionContext, re
 		}
 	}()
 
-	protoQueryContext, sdkQueryContext, err := convertQueryContext(request)
+	protoQueryContext, sdkQueryContext, err := q.convertQueryContext(request)
 	if err != nil {
 		return nil, err
 	}
@@ -198,10 +193,12 @@ func addConnectionsToContext(ctx context.Context, connections map[string]*connec
 	return context.WithValue(ctx, connection.CacheConnectionKey, md)
 }
 
-func convertQueryContext(request *blinkPlugin.ExecuteActionRequest) (*proto.QueryContext, *sdk_query.QueryContext, error) {
+func (q *QueryPlugin) convertQueryContext(request *blinkPlugin.ExecuteActionRequest) (*proto.QueryContext, *sdk_query.QueryContext, error) {
 	pqc := &proto.QueryContext{Quals: map[string]*proto.Quals{}}
 	var qc sdk_query.QueryContext
 	queryContext, ok := request.Parameters["query.ctx"]
+
+	q.SteamPipePlugin.Logger.Debug("query.ctx", queryContext)
 	if !ok {
 		return nil, nil, errors.New("sdk query context not found in parameters with key query.ctx")
 	}

@@ -2,8 +2,10 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -392,6 +394,9 @@ func (d *QueryData) streamLeafListItem(ctx context.Context, item interface{}) {
 	}
 	// increment the stream count
 	d.QueryStatus.rowsStreamed++
+	if d.QueryContext.BlinkMaxRows > 0 && d.QueryStatus.rowsStreamed > d.QueryContext.BlinkMaxRows+1 {
+		panic(fmt.Sprintf("limit of rows reached: %d", d.QueryContext.BlinkMaxRows))
+	}
 
 	// create rowData, passing matrixItem from context
 	rd := newRowData(d, item)
@@ -412,19 +417,27 @@ func (d *QueryData) fetchComplete() {
 
 // read rows from rowChan and stream back
 func (d *QueryData) streamRows(_ context.Context, rowChan chan *proto.Row) error {
+
+	var limitError error
 	for {
 		// wait for either an item or an error
 		select {
 		case err := <-d.errorChan:
-			log.Printf("[ERROR] streamRows error chan select: %v\n", err)
-			return err
+			if strings.Contains(err.Error(), "limit of rows reached") {
+				// ignore the error here so we get a chance to stream the data, will return an error when streaming is done
+				log.Printf("[DEBUG] ignoring limit of rows reached error")
+				limitError = errors.New(fmt.Sprintf("limit of rows reached: %d", d.QueryContext.BlinkMaxRows))
+			} else {
+				log.Printf("[ERROR] streamRows error chan select: %v\n", err)
+				return err
+			}
 		case row := <-rowChan:
 			if row == nil {
 				// tell the concurrency manage we are done (it may log the concurrency stats)
 				log.Println("[TRACE] row chan closed, stop streaming")
 				d.concurrencyManager.Close()
 				// channel closed
-				return nil
+				return limitError
 			}
 			if err := d.streamRow(row); err != nil {
 				return err
@@ -473,7 +486,7 @@ func (d *QueryData) buildRows(ctx context.Context) chan *proto.Row {
 				}
 				logging.LogTime("got rowData - calling getRow")
 				rowWg.Add(1)
-				go d.buildRow(ctx, rowData, rowChan, &rowWg)
+				d.buildRow(ctx, rowData, rowChan, &rowWg)
 			}
 		}
 	}()
