@@ -486,7 +486,7 @@ func (d *QueryData) buildRows(ctx context.Context) chan *proto.Row {
 				}
 				logging.LogTime("got rowData - calling getRow")
 				rowWg.Add(1)
-				d.buildRow(ctx, rowData, rowChan, &rowWg)
+				go d.buildRow(ctx, rowData, rowChan, &rowWg)
 			}
 		}
 	}()
