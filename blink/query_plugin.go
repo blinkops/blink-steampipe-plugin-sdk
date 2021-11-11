@@ -212,7 +212,11 @@ func (q *QueryPlugin) convertQueryContext(request *blinkPlugin.ExecuteActionRequ
 		quals := &proto.Quals{}
 		for _, constraint := range constraintList.Constraints {
 			qualValue := &proto.QualValue{}
-			qualValue.Value = &proto.QualValue_StringValue{StringValue: constraint.Expression}
+			var listValues []*proto.QualValue
+			for _, expr := range constraint.Expression {
+				listValues = append(listValues, &proto.QualValue{Value: &proto.QualValue_StringValue{StringValue: expr}})
+			}
+			qualValue.Value = &proto.QualValue_ListValue{ListValue: &proto.QualValueList{Values: listValues}}
 			qual := &proto.Qual{
 				FieldName: name,
 				Operator:  &proto.Qual_StringValue{StringValue: convertOperator(constraint.Operator)},
