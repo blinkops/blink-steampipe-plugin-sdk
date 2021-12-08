@@ -157,7 +157,7 @@ func (q *QueryPlugin) ExecuteAction(actionContext *blinkPlugin.ActionContext, re
 	}
 
 	tableName := request.Name
-	err = q.addColumnNames(protoQueryContext, tableName)
+	err = q.addColumnNames(protoQueryContext, tableName, sdkQueryContext)
 	if err != nil {
 		return nil, err
 	}
@@ -263,13 +263,32 @@ func (q *QueryPlugin) TestCredentials(conn map[string]*connections.ConnectionIns
 	return q.TestCredentialsFunc(blinkPlugin.NewActionContext(nil, conn))
 }
 
-func (q *QueryPlugin) addColumnNames(queryContext *proto.QueryContext, tableName string) error {
+func (q *QueryPlugin) addColumnNames(queryContext *proto.QueryContext, tableName string, sdkQueryContext *sdk_query.QueryContext) error {
 	table, ok := q.SteamPipePlugin.TableMap[tableName]
 	if !ok {
 		return errors.New("table not found: " + tableName)
 	}
+
+	hasStar := false
+	for _, inputCol := range sdkQueryContext.Columns {
+		if inputCol == "*" {
+			hasStar = true
+		}
+	}
+	if hasStar {
+		for _, column := range table.Columns {
+			queryContext.Columns = append(queryContext.Columns, column.Name)
+		}
+		return nil
+	}
+	validColumns := map[string]bool{}
 	for _, column := range table.Columns {
-		queryContext.Columns = append(queryContext.Columns, column.Name)
+		validColumns[column.Name] = true
+	}
+	for _, inputCol := range sdkQueryContext.Columns {
+		if validColumns[inputCol] == true {
+			queryContext.Columns = append(queryContext.Columns, inputCol)
+		}
 	}
 	return nil
 }
