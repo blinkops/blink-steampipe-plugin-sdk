@@ -291,6 +291,7 @@ func (p *Plugin) Execute0(ctx context.Context, req *proto.ExecuteRequest, stream
 	}
 
 	queryData := newQueryData(queryContext, table, stream, nil, matrixItem, p.ConnectionManager)
+	queryData.columns = queryContext.Columns
 	p.Logger.Debug("calling fetchItems", "table", table.Name, "matrixItem", matrixItem)
 
 	// asyncronously fetch items
@@ -309,6 +310,10 @@ func (p *Plugin) Execute0(ctx context.Context, req *proto.ExecuteRequest, stream
 }
 
 func (p *Plugin) copyBlinkFields(queryContext *QueryContext, sdkQueryContext *sdk_query.QueryContext) {
+	if sdkQueryContext.Limit > 0 {
+		limitInt64 := int64(sdkQueryContext.Limit)
+		queryContext.Limit = &limitInt64
+	}
 	queryContext.BlinkLimit = sdkQueryContext.Limit
 	queryContext.BlinkOffset = sdkQueryContext.Offset
 	queryContext.BlinkOrderBy = sdkQueryContext.OrderBy
