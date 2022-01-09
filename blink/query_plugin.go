@@ -232,7 +232,7 @@ func (q *QueryPlugin) convertQueryContext(request *blinkPlugin.ExecuteActionRequ
 func convertOperator(operator sdk_query.Op) string {
 	switch operator {
 	case sdk_query.OpEQ:
-		return "="
+		return "is"
 	case sdk_query.OpGT:
 		return ">"
 	case sdk_query.OpLE:
