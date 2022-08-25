@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
+
 	blinkPlugin "github.com/blinkops/blink-sdk/plugin"
 	"github.com/blinkops/blink-sdk/plugin/connections"
 	"github.com/blinkops/blink-sdk/plugin/sdk_query"
@@ -13,8 +16,6 @@ import (
 	"github.com/turbot/steampipe-plugin-sdk/grpc/proto"
 	steamPlugin "github.com/turbot/steampipe-plugin-sdk/plugin"
 	"google.golang.org/grpc/metadata"
-	"strings"
-	"time"
 )
 
 const ActionContextKey = "actionContext"
@@ -291,4 +292,8 @@ func (q *QueryPlugin) addColumnNames(queryContext *proto.QueryContext, tableName
 		}
 	}
 	return nil
+}
+
+func (q *QueryPlugin) HealthStatus() (*blinkPlugin.HealthStatusResponse, error) {
+	return &blinkPlugin.HealthStatusResponse{InUse: false}, nil
 }
