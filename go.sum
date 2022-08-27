@@ -11,8 +11,8 @@ github.com/apparentlymart/go-dump v0.0.0-20180507223929-23540a00eaa3/go.mod h1:o
 github.com/apparentlymart/go-textseg v1.0.0/go.mod h1:z96Txxhf3xSFMPmb5X/1W05FF/Nj9VFpLOpjS5yuumk=
 github.com/apparentlymart/go-textseg/v13 v13.0.0 h1:Y+KvPE1NYz0xl601PVImeQfFyEy6iT90AvPUL1NNfNw=
 github.com/apparentlymart/go-textseg/v13 v13.0.0/go.mod h1:ZK2fH7c4NqDTLtiYLvIkEghdlcqw7yxLeM89kiTRPUo=
-github.com/blinkops/blink-sdk v1.0.220825-85.0.20220827174456-b47e22761715 h1:+RfhLb6Bo6xzuDNp2TkJd1FM0z5WMnC9ssa3TVtvAYM=
-github.com/blinkops/blink-sdk v1.0.220825-85.0.20220827174456-b47e22761715/go.mod h1:/lgj8Hpv7I2dQDxOR+XccxQ83Z+E3wpABGrXIOhTNnc=
+github.com/blinkops/blink-sdk v1.0.220825-85.0.20220827185027-205dfc153304 h1:KbQ/jYJLoPXlfkjG6i7PjkLXkV4ai8TjEM0ThTPzcLE=
+github.com/blinkops/blink-sdk v1.0.220825-85.0.20220827185027-205dfc153304/go.mod h1:/lgj8Hpv7I2dQDxOR+XccxQ83Z+E3wpABGrXIOhTNnc=
 github.com/btubbs/datetime v0.1.1 h1:KuV+F9tyq/hEnezmKZNGk8dzqMVsId6EpFVrQCfA3To=
 github.com/btubbs/datetime v0.1.1/go.mod h1:n2BZ/2ltnRzNiz27aE3wUb2onNttQdC+WFxAoks5jJM=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
