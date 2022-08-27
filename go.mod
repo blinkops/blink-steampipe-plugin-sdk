@@ -3,7 +3,7 @@ module github.com/turbot/steampipe-plugin-sdk
 go 1.18
 
 require (
-	github.com/blinkops/blink-sdk v1.0.220825-85.0.20220827185027-205dfc153304
+	github.com/blinkops/blink-sdk v1.0.220828-86
 	github.com/dgraph-io/ristretto v0.0.3
 	github.com/gertd/go-pluralize v0.1.7
 	github.com/ghodss/yaml v1.0.0
